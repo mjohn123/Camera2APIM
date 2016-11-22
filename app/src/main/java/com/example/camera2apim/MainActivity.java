@@ -12,10 +12,14 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
     }
-    public void turn_on_Service(View view) {
 
+    public void turn_on_Service(View view) {
         Intent serviceIntent = new Intent(getApplicationContext(), TurnOnOffCameraService.class);
         getApplicationContext().startService(serviceIntent);
+        finish();
     }
-
+    public void turn_off_Service(View view) {
+        Intent serviceIntent = new Intent(getApplicationContext(), TurnOnOffCameraService.class);
+        getApplicationContext().stopService(serviceIntent);
+    }
 }

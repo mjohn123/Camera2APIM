@@ -2,6 +2,8 @@ package com.example.camera2apim;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.KeyguardManager;
+import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -23,9 +25,11 @@ import android.media.ImageReader;
 import android.media.MediaActionSound;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.CountDownTimer;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.PowerManager;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
@@ -35,6 +39,8 @@ import android.util.SparseIntArray;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Toast;
 
 import org.greenrobot.eventbus.EventBus;
@@ -74,7 +80,6 @@ public class AndroidCamera extends AppCompatActivity {
     /**
      * Camera state: Picture was taken.
      */
-    private static final int STATE_PICTURE_TAKEN = 4;
     private int mState;
     private TextureView mTextureView;
     private Size mPreviewSize;
@@ -83,24 +88,21 @@ public class AndroidCamera extends AppCompatActivity {
     String[] PERMISSIONS = {Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.CAMERA};
     private static final int PERMISSION_ALL = 105;
     private static final int REQUEST_CAMERA_RESULT = 106;
-
+    KeyguardManager.KeyguardLock kl;
+    public ProgressDialog delayProgressDialog;
     private TextureView.SurfaceTextureListener mSurfaceTextureListener =
             new TextureView.SurfaceTextureListener() {
                 @Override
                 public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
                     mSurfaceTextureAvailable = true;
                     setupCameraIfPossible();
-
                 }
 
                 @Override
-                public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-
-                }
+                public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) { }
 
                 @Override
                 public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-                    //closeCamera();
                     mSurfaceTextureAvailable = false;
                     return false;
                 }
@@ -114,14 +116,17 @@ public class AndroidCamera extends AppCompatActivity {
     private boolean mPermissionsGranted;
 
     private void setupCameraIfPossible() {
-        if (mSurfaceTextureAvailable && mPermissionsGranted) {
-            String cameraLens = BleUtils.getCameraLens(AndroidCamera.this);
-            if (TextUtils.isEmpty(cameraLens)) {
-                cameraLens = "1";
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (mSurfaceTextureAvailable && mPermissionsGranted) {
+                setupCamera(mTextureView.getWidth(), mTextureView.getHeight(), "1");
+                openCamera();
             }
-            //openBackgroundThread();
-            setupCamera(mTextureView.getWidth(), mTextureView.getHeight(), cameraLens);
-            openCamera();
+        }
+        else {
+            if (mSurfaceTextureAvailable) {
+                setupCamera(mTextureView.getWidth(), mTextureView.getHeight(), "1");
+                openCamera();
+            }
         }
     }
 
@@ -134,6 +139,7 @@ public class AndroidCamera extends AppCompatActivity {
                     mCameraOpenCloseLock.release();
                     mCameraDevice = camera;
                     createCameraPreviewSession();
+                    delayProgressDialog.dismiss();
                 }
 
                 @Override
@@ -149,7 +155,7 @@ public class AndroidCamera extends AppCompatActivity {
                     mCameraOpenCloseLock.release();
                     camera.close();
                     mCameraDevice = null;
-                    finish();
+                    //finish();
                 }
             };
     private CaptureRequest mPreviewCaptureRequest;
@@ -259,14 +265,37 @@ public class AndroidCamera extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.camera_activity);
-        //openBackgroundThread();
-        mPermissionsGranted = hasAllPermissions(this, PERMISSIONS);
-        if (!mPermissionsGranted) {
-            ActivityCompat.requestPermissions(this, PERMISSIONS, PERMISSION_ALL);
+        KeyguardManager keyguardManager = (KeyguardManager)getSystemService(Context.KEYGUARD_SERVICE);
+        if (keyguardManager.inKeyguardRestrictedInputMode())
+        {
+            Log.d(TAG,"======******=======unlock=========************");
+            Window window = AndroidCamera.this.getWindow();
+            window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+            window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+        kl = keyguardManager.newKeyguardLock("MyKeyguardLock");
+        kl.disableKeyguard();
+        PowerManager pm = (PowerManager) getSystemService(getApplicationContext().POWER_SERVICE);
+        PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK
+                | PowerManager.ACQUIRE_CAUSES_WAKEUP
+                | PowerManager.ON_AFTER_RELEASE, "MyWakeLock");
+        wakeLock.acquire();
+        Log.d(TAG,"======******=======onCreate=========************");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            mPermissionsGranted = hasAllPermissions(this, PERMISSIONS);
+            if (!mPermissionsGranted) {
+                ActivityCompat.requestPermissions(this, PERMISSIONS, PERMISSION_ALL);
+            }
         }
         mTextureView = (TextureView) findViewById(R.id.texture);
+
+        delayProgressDialog = ProgressDialog.show(AndroidCamera.this, "Please wait ...", "Opening ...", true);
+        delayProgressDialog.setCancelable(true);
     }
 
     public static boolean hasAllPermissions(Context context, String... permissions) {
@@ -279,33 +308,7 @@ public class AndroidCamera extends AppCompatActivity {
         }
         return true;
     }
-    @Override
-    public void onStart() {
-        super.onStart();
-        if (!EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().register(this);
-        }
-    }
 
-    @Override
-    public void onStop() {
-        super.onStop();
-        EventBus.getDefault().unregister(this);
-    }
-
-    @Subscribe
-    public void onCaptureNumberReceived(OnCaptureEvent event) {
-        //get the phone number value here and do something with it
-        String capturecode = event.getCodeCapture();
-        Log.d(TAG, capturecode);
-        if (capturecode.equals("exit")) {
-            finish(); // call this to finish the current activity
-            Intent homeIntent = new Intent(Intent.ACTION_MAIN);
-            homeIntent.addCategory(Intent.CATEGORY_HOME);
-            homeIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            startActivity(homeIntent);
-        }
-    }
     public void takepicture(View view) {
 
         try {
@@ -329,7 +332,6 @@ public class AndroidCamera extends AppCompatActivity {
         } else {
             mCameraId = String.valueOf(Camera.CameraInfo.CAMERA_FACING_BACK);
         }
-        BleUtils.setCameraLens(this, mCameraId);
         if (mTextureView.isAvailable()) {
 
             setupCamera(mTextureView.getWidth(), mTextureView.getHeight(), mCameraId);
@@ -349,12 +351,10 @@ public class AndroidCamera extends AppCompatActivity {
     File createImageFile() throws IOException {
 
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        String imageFileName = "BLE_" + timeStamp + "_";
+        String imageFileName = "Image_" + timeStamp + "_";
         File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
         if (!storageDirectory.exists()) {
             if (!storageDirectory.mkdirs()) {
-                Log.e("Dir", "Failed to create directory");
-                Log.d("MAKE DIR", storageDirectory.mkdir() + "" + storageDirectory.getParentFile() + "");
                 return null;
             }
         }
@@ -370,7 +370,6 @@ public class AndroidCamera extends AppCompatActivity {
         switch (requestCode) {
             case REQUEST_CAMERA_RESULT:
                 mPermissionsGranted = hasAllPermissions(this, PERMISSIONS);
-                //setupCameraIfPossible();
                 break;
 
             default:
@@ -381,12 +380,10 @@ public class AndroidCamera extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
+        kl.disableKeyguard();
         openBackgroundThread();
         if (mTextureView.isAvailable()) {
-            if (!TextUtils.isEmpty(BleUtils.getCameraLens(AndroidCamera.this)))
-                setupCamera(mTextureView.getWidth(), mTextureView.getHeight(),BleUtils.getCameraLens(AndroidCamera.this));
-            else
-                setupCamera(mTextureView.getWidth(), mTextureView.getHeight(),"1");
+            setupCamera(mTextureView.getWidth(), mTextureView.getHeight(),"1");
             openCamera();
         } else {
             mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
@@ -399,14 +396,6 @@ public class AndroidCamera extends AppCompatActivity {
         closeBackgroundThread();
         super.onPause();
     }
-
-//    public void onPause() {
-//        Log.d(TAG,"onPause");
-//        closeCamera();
-//        closeBackgroundThread();
-//        super.onPause();
-//    }
-
     private void setupCamera(int width, int height, String cameraId) {
         CameraManager cameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {

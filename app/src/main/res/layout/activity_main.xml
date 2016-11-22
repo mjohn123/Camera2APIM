@@ -9,9 +9,18 @@
     <Button
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Start Auto TurnOn/Off Camera in 5s"
-        android:id="@+id/button"
+        android:text="Start Auto Turn On Service Camera"
+        android:id="@+id/button1"
         android:onClick="turn_on_Service"
+        android:layout_centerVertical="true"
+        android:layout_centerHorizontal="true" />
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Start Auto TurnOff Service Camera"
+        android:id="@+id/button2"
+        android:layout_below="@+id/button1"
+        android:onClick="turn_off_Service"
         android:layout_centerVertical="true"
         android:layout_centerHorizontal="true" />
 </RelativeLayout>
