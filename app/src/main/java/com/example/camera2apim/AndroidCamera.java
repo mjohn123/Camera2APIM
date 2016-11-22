@@ -262,29 +262,39 @@ public class AndroidCamera extends AppCompatActivity {
 
         }
     }
+    private PowerManager mPowerManager;
+    private PowerManager.WakeLock mWakeLock;
+    private void releaseWakeLock() {
+        try {
+            mWakeLock.release();
+        }
+        catch (Exception e) {
 
+        }
+    }
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.camera_activity);
-        KeyguardManager keyguardManager = (KeyguardManager)getSystemService(Context.KEYGUARD_SERVICE);
-        if (keyguardManager.inKeyguardRestrictedInputMode())
-        {
-            Log.d(TAG,"======******=======unlock=========************");
-            Window window = AndroidCamera.this.getWindow();
-            window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
-            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
-            window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        }
-        kl = keyguardManager.newKeyguardLock("MyKeyguardLock");
+        kl = ((KeyguardManager) getSystemService(Activity.KEYGUARD_SERVICE)).newKeyguardLock(KEYGUARD_SERVICE);
+        mPowerManager = ((PowerManager) getSystemService(Context.POWER_SERVICE));
+        PowerManager.WakeLock mWakeLock = mPowerManager.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "TAG");
+
         kl.disableKeyguard();
-        PowerManager pm = (PowerManager) getSystemService(getApplicationContext().POWER_SERVICE);
-        PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK
-                | PowerManager.ACQUIRE_CAUSES_WAKEUP
-                | PowerManager.ON_AFTER_RELEASE, "MyWakeLock");
-        wakeLock.acquire();
+        try {
+            mWakeLock.acquire();
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+                | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON);
+
+
         Log.d(TAG,"======******=======onCreate=========************");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             mPermissionsGranted = hasAllPermissions(this, PERMISSIONS);
@@ -292,6 +302,7 @@ public class AndroidCamera extends AppCompatActivity {
                 ActivityCompat.requestPermissions(this, PERMISSIONS, PERMISSION_ALL);
             }
         }
+
         mTextureView = (TextureView) findViewById(R.id.texture);
 
         delayProgressDialog = ProgressDialog.show(AndroidCamera.this, "Please wait ...", "Opening ...", true);
@@ -392,8 +403,10 @@ public class AndroidCamera extends AppCompatActivity {
     @Override
     public void onPause() {
         Log.d(TAG,"======******=======onPause=========************");
+        kl.reenableKeyguard();
         closeCamera();
         closeBackgroundThread();
+        releaseWakeLock();
         super.onPause();
     }
     private void setupCamera(int width, int height, String cameraId) {
